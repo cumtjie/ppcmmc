@@ -47,102 +47,97 @@ class Markov(object):
 			return None
 		return list(self.table[state].keys())[chosen]
 
-	def nextLeaf(self, state):
-		tempState = state
-		result = self.next(state)
-		while result:
-			tempState += result
-			result = m.next(tempState)
-		return tempState
-
-	def nextLeafs(self, state):
-		if self.hasState(state):
-#			return [self.nextLeaf(state+leaf) for leaf in list(self.table[state].keys())]
-			leafs = sorted(self.table[state], key=lambda key:self.table[state])
-			leafs.reverse()
-			return leafs
-		else:
-			return None
-
 	def nextStates(self, state):
 		if self.hasState(state):
-#			return list(self.table[state].keys())
-			states = sorted(self.table[state], key=lambda key:self.table[state])
+			states = sorted(self.table[state].keys(), key=lambda key:self.table[state][key])
 			states.reverse()
 			return states
 		else:
 			return None
+	
+	def train(self, pairList):
+		for pair in pairList:
+			self.increaseRelation(pair[0], pair[1])
 
-def train(markov, pairList):
-	for pair in pairList:
-		markov.increaseRelation(pair[0], pair[1])
 
-def getPairs(text, separator=' '):
-	pairList = []
-	symbol = ''
-	for i in range(len(text)):
-		if i+1 < len(text):
-			if text[i+1] != separator and text[i] != separator:
-				if symbol == '':
-					symbol = text[i]
-					pairList.append((symbol, text[i+1]))
-					symbol += text[i+1]
-				else:
-					pairList.append((symbol, text[i+1]))
-					symbol += text[i+1]
-			else:
-				symbol = ''
-	return pairList
+class PPM(object):
 
-def getPairsCompletions(text, separator=' '):
-	pairList = []
-	for word in text.split(separator):
-		for i in range(len(word)-1):
-			pairList.append((word[:i+1], word[i+1:]))
-	return pairList
-
-def getPairsCompletions2(text, separator=' '):
-	pairList = []
-	for word in text.split(separator):
-		for i in range(len(word)-1):
-			pairList.append((word[:i+1], word))
-	return pairList
-
-def getPairsContext(text, separator=' '):
-	pairList = []
+	mWord = None
+	mContext = None
 	lastWord = None
-	for word in text.split(separator):
-		if lastWord is not None:
-			pairList.append((lastWord, word))
-		lastWord = word
-	return pairList
+	
+	def __init__(self):
+		self.mWord = Markov()
+		self.mContext = Markov()
+		
+	def logic(self, i, mContext, m):
+		if self.lastWord is not None:
+			if mContext.hasState(self.lastWord):
+				result = processInputForContext(i, self.lastWord)
+				mContext.increaseRelation(self.lastWord, result)
+				self.lastWord = result
+			else:
+				result = processInput(i)
+				mContext.train([(self.lastWord, result)])
+				m.train(TextHandler.getPairsCompletions(result))
+				self.lastWord = result
+		else:
+			self.lastWord = processInput(i)
+			if False in [m.hasState(pair[0]) for pair in TextHandler.getPairsCompletions(self.lastWord)]:
+				m.train(TextHandler.getPairsCompletions(self.lastWord))
+#		text += ' ' + lastWord
+		return self.lastWord
 
-def getText(file):
-	text = None
-	f = codecs.open(file, 'r')
-	text = f.read()
-	f.close()
-	return text
+class TextHandler(object):
+	
+	@staticmethod
+	def getPairsCompletions(text, separator=' '):
+		pairList = []
+		for word in text.split(separator):
+			for i in range(len(word)-1):
+				pairList.append((word[:i+1], word))
+		return pairList
 
-def treatText(text, ignore='.,[]()!?/\\:;@#$%\"\'*&^~{}<>\n', separator=' '):
-	treatedText = text
-	for symbol in ignore:
-		treatedText = treatedText.replace(symbol, separator)
-	tempList = treatedText.split(separator)
-	if '' in tempList:
-		tempList.remove('')
-	return separator.join(tempList)
+	@staticmethod
+	def getPairsContext(text, separator=' '):
+		pairList = []
+		lastWord = None
+		for word in text.split(separator):
+			if lastWord is not None:
+				pairList.append((lastWord, word))
+			lastWord = word
+		return pairList
 
-#text = getText("war&peace2.txt")
-#treatedText = treatText(text)
+	@staticmethod
+	def getText(file):
+		text = None
+		f = codecs.open(file, 'r')
+		text = f.read()
+		f.close()
+		return text
+
+	@staticmethod
+	def treatText(text, ignore='.,[]()!?/\\:;@#$%\"\'*&^~{}<>\n', separator=' '):
+		treatedText = text
+		for symbol in ignore:
+			treatedText = treatedText.replace(symbol, separator)
+		tempList = treatedText.split(separator)
+		if '' in tempList:
+			tempList.remove('')
+		return separator.join(tempList)
+
+text = TextHandler.getText("war&peace2.txt")
+treatedText = TextHandler.treatText(text)
 
 m = Markov()
-#pairs = getPairsCompletions2(treatedText)
-#train(m, pairs)
+pairs = TextHandler.getPairsCompletions(treatedText)
+m.train(pairs)
 
 mContext = Markov()
-#pairsContext = getPairsContext(treatedText)
-#train(mContext, pairsContext)
+pairsContext = TextHandler.getPairsContext(treatedText)
+mContext.train(pairsContext)
+
+ppm = PPM()
 
 lastWord = None
 text = ''
@@ -168,7 +163,7 @@ def processInput(i):
 	return i
 
 def processInputForContext(i, c):
-	contexts = [context for context in mContext.nextStates(c) if context.startswith(i) ]
+	contexts = [context for context in mContext.nextStates(c) if context.startswith(i) and not context == i ]
 	if len(contexts) > 0:
 		print("*")
 		selected = select(contexts)
@@ -179,19 +174,15 @@ def processInputForContext(i, c):
 	return i
 
 while True:
-	i = raw_input(text + " > ")
-	if lastWord is not None:
-		if mContext.hasState(lastWord):
-			result = processInputForContext(i, lastWord)
-			mContext.increaseRelation(lastWord, result)
-			lastWord = result
-		else:
-			result = processInput(i)
-			train(mContext,[(lastWord, result)])
-			train(m, getPairsCompletions2(result))
-			lastWord = result
+	i = raw_input('\n' + text + "\n(# = clean, @ = status) > ")
+	if i == '#':
+		text = ''
+		ppm.lastWord = None
+	elif i == '@':
+		print 'context: ', mContext.table
+		print 'word: ', m.table
+		print 'lastWord: ', ppm.lastWord
 	else:
-		lastWord = processInput(i)
-		if False in [m.hasState(pair[0]) for pair in getPairsCompletions2(lastWord)]:
-			train(m, getPairsCompletions2(lastWord))
-	text += ' ' + lastWord
+		for word in i.split(' '):
+			result = ppm.logic(word, mContext, m)
+			text += ' ' + result
