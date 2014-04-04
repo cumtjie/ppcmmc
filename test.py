@@ -183,7 +183,7 @@ def processInput2(i):
 	nextWords = m.nextStates(i)
 	if nextWords is not None:
 		if len(nextWords) > 0:
-			return nextWords
+			return nextWords[:5]
 	return [i]
 
 def processInputForContext(i, c):
