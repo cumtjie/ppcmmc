@@ -1,5 +1,6 @@
 import codecs
 import sys
+from msvcrt import *
 
 class Markov(object):
 
@@ -88,6 +89,22 @@ class PPM(object):
 #		text += ' ' + lastWord
 		return self.lastWord
 
+	def logic2(self, i, mContext, m, lastWord = None):
+		if lastWord is not None:
+			if mContext.hasState(lastWord):
+				result = processInputForContext2(i, lastWord)
+#				mContext.increaseRelation(lastWord, result)
+			else:
+				result = processInput2(i)
+#				mContext.train([(lastWord, result)])
+#				m.train(TextHandler.getPairsCompletions(result))
+		else:
+			result = processInput2(i)
+#			if False in [m.hasState(pair[0]) for pair in TextHandler.getPairsCompletions(lastWord)]:
+#				m.train(TextHandler.getPairsCompletions(lastWord))
+#		text += ' ' + lastWord
+		return result
+
 class TextHandler(object):
 	
 	@staticmethod
@@ -162,6 +179,13 @@ def processInput(i):
 				return selected
 	return i
 
+def processInput2(i):
+	nextWords = m.nextStates(i)
+	if nextWords is not None:
+		if len(nextWords) > 0:
+			return nextWords
+	return [i]
+
 def processInputForContext(i, c):
 	contexts = [context for context in mContext.nextStates(c) if context.startswith(i) and not context == i ]
 	if len(contexts) > 0:
@@ -173,16 +197,63 @@ def processInputForContext(i, c):
 		return processInput(i)
 	return i
 
+def processInputForContext2(i, c):
+	contexts = [context for context in mContext.nextStates(c) if context.startswith(i) and not context == i ]
+	if len(contexts) > 0:
+		if len(contexts) < 5:
+			p = processInput2(i)
+			for w in p:
+				if w not in contexts:
+					contexts.append(w)
+			return contexts[:5]
+		else:
+			return contexts[:5]
+	return processInput2(i)[:5]
+
+mem = ''
+candidates = []
+valid_chars = 'qwertyiuopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM'
+options = '12345'
+
+print "GO"
+	
 while True:
-	i = raw_input('\n' + text + "\n(# = clean, @ = status) > ")
-	if i == '#':
+#	i = raw_input('\n' + text + "\n(# = clean, @ = status) > ")
+	i = getch()
+	if i == '!':
+		break
+	elif i == '#':
 		text = ''
 		ppm.lastWord = None
+		mem = ''
 	elif i == '@':
 		print 'context: ', mContext.table
 		print 'word: ', m.table
 		print 'lastWord: ', ppm.lastWord
+	elif i == ' ':
+#		result = ppm.logic(mem, mContext, m)
+#		text += ' ' + result
+		text += ' ' + mem
+		if lastWord is not None:
+			mContext.increaseRelation(lastWord, mem)
+		m.train(TextHandler.getPairsCompletions(mem))
+		lastWord = mem
+		mem = ''
+		print '\n' + text
 	else:
-		for word in i.split(' '):
-			result = ppm.logic(word, mContext, m)
-			text += ' ' + result
+		if i in options:
+			if int(i) <= len(candidates):
+				w = candidates[int(i)-1]
+				mem = ''
+				text += ' ' + w
+				print '\n' + text
+				if lastWord is not None:
+					mContext.increaseRelation(lastWord, w)
+				m.train(TextHandler.getPairsCompletions(w))
+				lastWord = w
+		elif i in valid_chars:
+			mem += i
+#			sys.stdout.write(i)
+			candidates = ppm.logic2(mem, mContext, m, lastWord)
+			print '\ncandidates:' , candidates
+			print text + ' ' + mem
