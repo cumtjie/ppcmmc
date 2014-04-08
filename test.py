@@ -40,10 +40,10 @@ class Markov(object):
 		chosen = -1
 		if state in self.table:
 			candidatesWeights = list(self.table[state].values())
-			for i in range(len(candidatesWeights)):
-				if candidatesWeights[i] > maxWeight:
-					chosen = i
-					maxWeight = candidatesWeights[i]
+			for _input in range(len(candidatesWeights)):
+				if candidatesWeights[_input] > maxWeight:
+					chosen = _input
+					maxWeight = candidatesWeights[_input]
 		if chosen == -1:
 			return None
 		return list(self.table[state].keys())[chosen]
@@ -66,44 +66,86 @@ class PPM(object):
 	mWord = None
 	mContext = None
 	lastWord = None
+	text = None
+	mem = ''
+	candidates = None
+	valid_chars = 'qwertyiuopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM'
+	options = '12345'
 	
 	def __init__(self):
 		self.mWord = Markov()
 		self.mContext = Markov()
+		self.text = ''
+		self.candidates = []
 		
-	def logic(self, i, mContext, m):
+	def logic(self, _input):
 		if self.lastWord is not None:
-			if mContext.hasState(self.lastWord):
-				result = processInputForContext(i, self.lastWord)
-				mContext.increaseRelation(self.lastWord, result)
-				self.lastWord = result
+			if self.mContext.hasState(self.lastWord):
+				result = self.processInputForContext(_input, self.lastWord)
 			else:
-				result = processInput(i)
-				mContext.train([(self.lastWord, result)])
-				m.train(TextHandler.getPairsCompletions(result))
-				self.lastWord = result
+				result = self.processInput(_input)
 		else:
-			self.lastWord = processInput(i)
-			if False in [m.hasState(pair[0]) for pair in TextHandler.getPairsCompletions(self.lastWord)]:
-				m.train(TextHandler.getPairsCompletions(self.lastWord))
-#		text += ' ' + lastWord
-		return self.lastWord
-
-	def logic2(self, i, mContext, m, lastWord = None):
-		if lastWord is not None:
-			if mContext.hasState(lastWord):
-				result = processInputForContext2(i, lastWord)
-#				mContext.increaseRelation(lastWord, result)
-			else:
-				result = processInput2(i)
-#				mContext.train([(lastWord, result)])
-#				m.train(TextHandler.getPairsCompletions(result))
-		else:
-			result = processInput2(i)
-#			if False in [m.hasState(pair[0]) for pair in TextHandler.getPairsCompletions(lastWord)]:
-#				m.train(TextHandler.getPairsCompletions(lastWord))
-#		text += ' ' + lastWord
+			result = self.processInput(_input)
 		return result
+		
+	def processInputForContext(self, _input, _context):
+		contexts = [context for context in self.mContext.nextStates(_context) if context.startswith(_input) and not context == _input ]
+		if len(contexts) > 0:
+			return contexts[:5]
+		return self.processInput(_input)
+		
+	def processInput(self, _input):
+		nextWords = self.mWord.nextStates(_input)
+		if nextWords is not None:
+			if len(nextWords) > 0:
+				return nextWords[:5]
+		return [_input]
+	
+	def run(self):
+		while True:
+			_input = getch()
+			if _input == '!': #quit
+				break
+			elif _input == '#': #clean
+				self.text = ''
+				self.lastWord = None
+				self.mem = ''
+				print 
+			elif _input == '@': #status
+				print 'context: ', self.mContext.table
+				print 'word: ', self.mWord.table
+				print 'lastWord: ', self.lastWord
+			elif _input == ' ': #new word
+				self.text += ' ' + self.mem
+				if self.lastWord is not None:
+					self.mContext.increaseRelation(self.lastWord, self.mem)
+				self.mWord.train(TextHandler.getPairsCompletions(self.mem))
+				self.lastWord = self.mem
+				self.mem = ''
+				print '\n' + self.text
+			else: #new char
+				if _input in self.options:
+					if int(_input) <= len(self.candidates):
+						w = self.candidates[int(_input)-1]
+						self.mem = ''
+						self.text += ' ' + w
+						print '\n' + self.text
+						if self.lastWord is not None:
+							self.mContext.increaseRelation(self.lastWord, w)
+						self.mWord.train(TextHandler.getPairsCompletions(w))
+						self.lastWord = w
+				elif _input in self.valid_chars:
+					self.mem += _input
+					self.candidates = self.logic(self.mem)
+					print '\ncandidates:' , self.candidates
+					print self.text + ' ' + self.mem
+	
+	def train(self, text):
+		pairs = TextHandler.getPairsCompletions(text)
+		self.mWord.train(pairs)
+
+		pairsContext = TextHandler.getPairsContext(text)
+		self.mContext.train(pairsContext)
 
 class TextHandler(object):
 	
@@ -111,8 +153,8 @@ class TextHandler(object):
 	def getPairsCompletions(text, separator=' '):
 		pairList = []
 		for word in text.split(separator):
-			for i in range(len(word)-1):
-				pairList.append((word[:i+1], word))
+			for _input in range(len(word)-1):
+				pairList.append((word[:_input+1], word))
 		return pairList
 
 	@staticmethod
@@ -143,117 +185,7 @@ class TextHandler(object):
 			tempList.remove('')
 		return separator.join(tempList)
 
-text = TextHandler.getText("war&peace2.txt")
-treatedText = TextHandler.treatText(text)
-
-m = Markov()
-pairs = TextHandler.getPairsCompletions(treatedText)
-m.train(pairs)
-
-mContext = Markov()
-pairsContext = TextHandler.getPairsContext(treatedText)
-mContext.train(pairsContext)
-
 ppm = PPM()
+ppm.train(TextHandler.treatText(TextHandler.getText("war&peace2.txt")))
 
-lastWord = None
-text = ''
-
-def select(list, max = 5):
-	print("\nPossible values: ")
-	limit = min(len(list), max)
-	for count in range(limit):
-		print(count, list[count])
-	print("any other number cancels selection")
-	selected = input((" value? "))
-	if selected in range(limit):
-		return list[selected]
-	return None
-
-def processInput(i):
-	nextWords = m.nextStates(i)
-	if nextWords is not None:
-		if len(nextWords) > 0:
-			selected = select(nextWords)
-			if selected is not None:
-				return selected
-	return i
-
-def processInput2(i):
-	nextWords = m.nextStates(i)
-	if nextWords is not None:
-		if len(nextWords) > 0:
-			return nextWords[:5]
-	return [i]
-
-def processInputForContext(i, c):
-	contexts = [context for context in mContext.nextStates(c) if context.startswith(i) and not context == i ]
-	if len(contexts) > 0:
-		print("*")
-		selected = select(contexts)
-		if selected is not None:
-			return selected
-	else:
-		return processInput(i)
-	return i
-
-def processInputForContext2(i, c):
-	contexts = [context for context in mContext.nextStates(c) if context.startswith(i) and not context == i ]
-	if len(contexts) > 0:
-		if len(contexts) < 5:
-			p = processInput2(i)
-			for w in p:
-				if w not in contexts:
-					contexts.append(w)
-			return contexts[:5]
-		else:
-			return contexts[:5]
-	return processInput2(i)[:5]
-
-mem = ''
-candidates = []
-valid_chars = 'qwertyiuopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM'
-options = '12345'
-
-print "GO"
-	
-while True:
-#	i = raw_input('\n' + text + "\n(# = clean, @ = status) > ")
-	i = getch()
-	if i == '!':
-		break
-	elif i == '#':
-		text = ''
-		ppm.lastWord = None
-		mem = ''
-	elif i == '@':
-		print 'context: ', mContext.table
-		print 'word: ', m.table
-		print 'lastWord: ', ppm.lastWord
-	elif i == ' ':
-#		result = ppm.logic(mem, mContext, m)
-#		text += ' ' + result
-		text += ' ' + mem
-		if lastWord is not None:
-			mContext.increaseRelation(lastWord, mem)
-		m.train(TextHandler.getPairsCompletions(mem))
-		lastWord = mem
-		mem = ''
-		print '\n' + text
-	else:
-		if i in options:
-			if int(i) <= len(candidates):
-				w = candidates[int(i)-1]
-				mem = ''
-				text += ' ' + w
-				print '\n' + text
-				if lastWord is not None:
-					mContext.increaseRelation(lastWord, w)
-				m.train(TextHandler.getPairsCompletions(w))
-				lastWord = w
-		elif i in valid_chars:
-			mem += i
-#			sys.stdout.write(i)
-			candidates = ppm.logic2(mem, mContext, m, lastWord)
-			print '\ncandidates:' , candidates
-			print text + ' ' + mem
+ppm.run()
